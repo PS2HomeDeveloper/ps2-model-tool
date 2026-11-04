@@ -1,4 +1,4 @@
-# ps2-model-tool
+# PS2 Model Tool
 
 A standalone command-line tool that converts 3D models into compact binary resources for PlayStation 2 homebrew (ps2sdk / gsKit).
 It is independent of any game. Input: FBX (binary or ASCII, via [ufbx](https://github.com/ufbx/ufbx)). More formats can be added later.
