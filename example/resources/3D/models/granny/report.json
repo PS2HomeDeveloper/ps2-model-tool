@@ -1,0 +1,32 @@
+{
+  "format_version": 2,
+  "ufbx_commit": "5955c5c0b042ac2dc6f32955ab206aaec0620cfc",
+  "input": "/data/data/com.termux/files/home/storage/downloads/Granny.fbx",
+  "reference_clip": "idle",
+  "fps": 30,
+  "clips": [
+    {"name": "idle", "frames": 191, "duration": 6.33333333333, "source_begin": 0, "source_end": 6.33333348922},
+    {"name": "Hit", "frames": 74, "duration": 2.43333333333, "source_begin": 0, "source_end": 2.43333339002},
+    {"name": "Walk", "frames": 41, "duration": 1.33333333333, "source_begin": 0, "source_end": 1.333333964},
+    {"name": "arrowHit", "frames": 42, "duration": 1.36666666667, "source_begin": 0, "source_end": 1.36666774374},
+    {"name": "Look", "frames": 99, "duration": 3.26666666667, "source_begin": 0, "source_end": 3.2666673611},
+    {"name": "lookBed", "frames": 54, "duration": 1.76666666667, "source_begin": 0, "source_end": 1.76666831772},
+    {"name": "idle_1", "frames": 191, "duration": 6.33333333333, "source_begin": 0, "source_end": 6.33333348922}
+  ],
+  "geometry": {"mesh_instances": 7, "source_control_points": 4768, "source_faces": 5225, "source_corners": 15675, "vertices": 4558, "indices": 15675, "triangles": 5225, "parts": 8, "skipped_faces": 0, "bones": 45, "cluster_bindings": 39, "synthetic_bindings": 6},
+  "weights": {"max_influences": 4, "u8_sum": 255, "dropped_influences": 0, "vertices_truncated": 0, "dropped_fraction_sum": 0, "max_dropped_fraction": 0, "influences_quantized_to_zero": 78, "rigid_control_points": 1643},
+  "normalization": {"reference": "selected clip first frame, quantized skin", "target_axes": "right-handed Y-up", "target_unit_meters": 1, "scale": 167.636407967, "subtract_before_scale": [-0.0112412828124, -0.00323280870186, -0.0021231677174], "source_bounds_min": [-0.0149012794464, -0.00323280870186, -0.00462937120904], "source_bounds_max": [-0.00758128617837, 0.00869777382643, 0.000383035774243], "bounds_min": [-0.613548688902, 0, -0.420130950974], "bounds_max": [0.613548688902, 2, 0.420130950974]},
+  "textures": {"available_tim2_files": 0, "textured_materials": 8, "unresolved": 0},
+  "materials": [
+    {"name": "GrannyBakeLight11", "texture": "GrannyTexturePainted2.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.235849082, 0.235849082, 0.235849082, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 3697},
+    {"name": "GrannyLeg", "texture": "GrannyLeg.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.139705896, 0.139705896, 0.139705896, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 418},
+    {"name": "Eye", "texture": "Eye.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.150943398, 0.150943398, 0.150943398, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 576},
+    {"name": "HairMap1", "texture": "HairMap1.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.0588235296, 0.0588235296, 0.0588235296, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 192},
+    {"name": "TandUppe", "texture": "TandUppe.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.274509817, 0.274509817, 0.274509817, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 48},
+    {"name": "TandNere", "texture": "TandNere.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.274509817, 0.274509817, 0.274509817, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 48},
+    {"name": "Blood", "texture": "Blood.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.0660377145, 0.0476592928, 0.0476592928, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 82},
+    {"name": "ASHSEN_2", "texture": "ASHSEN_2.tm2", "match": "source filename (not inspected)", "flags": 0, "diffuse_rgba": [0.294117659, 0.294117659, 0.294117659, 1], "width": 0, "height": 0, "psm": 0, "bytes": 0, "transparent_samples": 0, "triangles": 164}
+  ],
+  "source_stacks": ["idle", "Hit", "Walk", "arrowHit", "Look", "lookBed", "idle_1"],
+  "warnings": []
+}
