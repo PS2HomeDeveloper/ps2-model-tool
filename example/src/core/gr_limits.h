@@ -1,0 +1,16 @@
+#ifndef GRANNY_LIMITS_H
+#define GRANNY_LIMITS_H
+
+#define GR_MAX_BONES 256u
+#define GR_MAX_VERTICES 65535u
+#define GR_MAX_MATERIALS 64u
+#define GR_MAX_PARTS 512u
+#define GR_MAX_INDICES 393216u
+#define GR_MAX_CLIPS 64u
+#define GR_MAX_FRAMES 4096u
+#define GR_MAX_ANIMATION_BYTES (12u * 1024u * 1024u)
+#define GR_MAX_TEXTURE_SIZE 512u
+#define GR_MIN_FPS 1.0f
+#define GR_MAX_FPS 120.0f
+
+#endif
