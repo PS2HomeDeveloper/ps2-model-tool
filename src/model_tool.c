@@ -335,9 +335,13 @@ static uint32_t material_index(Model *m, ufbx_material *source, const ufbx_node 
         match = match_texture(m, source->name.data);
         if (match) strcpy(mat->match, "material name");
     }
+    if (mat->texture && mat->texture->content.size && !match)
+        fail("material '%s' contains embedded image data which this tool cannot convert; supply a matching external TIM2 in --textures or extract/convert the image separately", mat->name);
     if (mat->texture && !match && m->textures) fail("unresolved textured material '%s': color map '%s'. Supply a matching .tm2 basename in --textures '%s'", mat->name, mat->texture->relative_filename.data, m->textures);
     if (mat->texture && !match) {
-        const char *src = mat->texture->relative_filename.length ? mat->texture->relative_filename.data : mat->texture->filename.data;
+        const char *src = mat->texture->relative_filename.length ? mat->texture->relative_filename.data :
+            (mat->texture->filename.length ? mat->texture->filename.data : mat->texture->absolute_filename.data);
+        if (!src || !*src) fail("material '%s' uses an embedded or filename-less color texture; extract it as a separate supported image before conversion", mat->name);
         const char *dot = strrchr(leaf_name(src), '.');
         char stem[48];
         stem_name(stem, sizeof(stem), src);
@@ -660,7 +664,7 @@ static void select_clip(Model *m, const char *requested)
         m->source_begin = m->clip->time_begin; m->source_end = m->clip->time_end;
         span = m->source_end - m->source_begin;
         if (!isfinite(m->source_begin) || !isfinite(m->source_end) || span < 0.0 || span > 3600.0) fail("animation time range is invalid or exceeds one hour");
-        intervals = floor(span * m->fps + 0.5);
+        intervals = floor(span * m->fps);
         if (span > 0.0 && intervals < 1.0) intervals = 1.0;
         if (intervals >= GR_MAX_FRAMES) fail("animation frame budget exceeded (%u frames)", GR_MAX_FRAMES);
         m->num_frames = (uint32_t)intervals + 1;
@@ -702,6 +706,40 @@ static void normalize_model(Model *m)
     m->center[2] = (m->raw_min[2] + m->raw_max[2]) * 0.5;
     for (k = 0; k < 3; ++k) { m->bounds_min[k] = (m->raw_min[k] - m->center[k]) * m->scale; m->bounds_max[k] = (m->raw_max[k] - m->center[k]) * m->scale; }
     if (pose != m->scene) ufbx_free_scene(pose);
+}
+
+static void bake_static_geometry(Model *m)
+{
+    uint32_t i;
+    if (m->scene->anim_stacks.count) return;
+    for (i = 0; i < m->num_vertices; ++i) {
+        Vertex *v = &m->vertices[i];
+        ufbx_vec3 p, n = {0}, source_n = {0};
+        unsigned k;
+        source_n.x = v->n[0]; source_n.y = v->n[1]; source_n.z = v->n[2];
+        p = vertex_world(m, v, m->scene);
+        for (k = 0; k < 4; ++k) if (v->w[k]) {
+            const Bone *b = &m->bones[v->j[k]];
+            ufbx_matrix world = bone_world(m, b, m->scene);
+            ufbx_matrix palette = ufbx_matrix_mul(&world, &b->binding);
+            ufbx_matrix inv = ufbx_matrix_invert(&palette);
+            double weight = (double)v->w[k] / 255.0;
+            size_t row;
+            for (row = 0; row < 3; ++row)
+                n.v[row] += weight * (inv.cols[row].v[0] * source_n.x +
+                    inv.cols[row].v[1] * source_n.y + inv.cols[row].v[2] * source_n.z);
+        }
+        {
+            double length = sqrt(n.x*n.x + n.y*n.y + n.z*n.z);
+            if (!isfinite(length) || length < 1e-20) fail("static vertex has an invalid transformed normal");
+            v->p[0] = checked_float((p.x - m->center[0]) * m->scale);
+            v->p[1] = checked_float((p.y - m->center[1]) * m->scale);
+            v->p[2] = checked_float((p.z - m->center[2]) * m->scale);
+            v->n[0] = checked_float(n.x / length);
+            v->n[1] = checked_float(n.y / length);
+            v->n[2] = checked_float(n.z / length);
+        }
+    }
 }
 
 static void stack_range(const ufbx_anim_stack *st, double *begin, double *end)
@@ -747,14 +785,24 @@ static void collect_clips(Model *m)
         stack_range(st, &c->begin, &c->end);
         span = c->end - c->begin;
         if (!isfinite(c->begin) || !isfinite(c->end) || span < 0.0 || span > 3600.0) fail("clip '%s' has an invalid time range", c->name);
-        intervals = floor(span * m->fps + 0.5);
+        intervals = floor(span * m->fps);
         if (span > 0.0 && intervals < 1.0) intervals = 1.0;
         if (intervals >= GR_MAX_FRAMES) fail("clip '%s' exceeds the frame budget (%u frames)", c->name, GR_MAX_FRAMES);
         c->frames = (uint32_t)intervals + 1;
         c->duration = intervals / m->fps;
         m->total_frames += c->frames;
     }
-    if (m->total_frames * m->num_bones * 48u > MAX_ANIM_BYTES) fail("animation data exceeds %u bytes; lower --fps or split the file", MAX_ANIM_BYTES);
+    {
+        size_t bytes = align16(32 + (size_t)m->num_clips * 64);
+        for (i = 0; i < m->num_clips; ++i) {
+            size_t payload;
+            if (m->num_bones && (size_t)m->clips[i].frames > (SIZE_MAX / 48u) / m->num_bones) fail("animation data size overflow");
+            payload = (size_t)m->clips[i].frames * m->num_bones * 48u;
+            if (bytes > SIZE_MAX - payload) fail("animation data size overflow");
+            bytes = align16(bytes + payload);
+        }
+        if (bytes > MAX_ANIM_BYTES) fail("complete animation file (%zu bytes including tables/alignment) exceeds %u bytes; lower --fps or split the file", bytes, MAX_ANIM_BYTES);
+    }
 }
 
 static void bake_animation(Model *m)
@@ -766,7 +814,7 @@ static void bake_animation(Model *m)
         for (frame = 0; frame < c->frames; ++frame) {
             double time = c->begin;
             ufbx_scene *pose;
-            if (c->frames > 1) time = frame == c->frames - 1 ? c->end : fmin(c->begin + frame / m->fps, c->end);
+            if (c->frames > 1) time = fmin(c->begin + frame / m->fps, c->end);
             pose = c->stack ? evaluate(m, c->stack, time) : m->scene;
             for (bone = 0; bone < m->num_bones; ++bone) {
                 ufbx_matrix w = bone_world(m, &m->bones[bone], pose);
@@ -790,9 +838,10 @@ static Blob new_binary(size_t size, const char *magic)
 
 static Blob mesh_binary(Model *m)
 {
-    size_t vertices = 64, indices = align16(vertices + (size_t)m->num_vertices * 48), parts = align16(indices + (size_t)m->num_indices * 4);
+    size_t vertices = 64, indices = align16(vertices + (size_t)m->num_vertices * 48), parts = align16(indices + (size_t)m->num_indices * 2);
     Blob b = new_binary(align16(parts + (size_t)m->num_parts * 16), "GMSH");
     size_t i, k, cursor = 0, part = 0;
+    put32(b.data + 4, 2);
     put32(b.data + 12, m->num_vertices); put32(b.data + 16, m->num_indices); put32(b.data + 20, m->num_parts);
     put32(b.data + 24, (uint32_t)vertices); put32(b.data + 28, (uint32_t)indices); put32(b.data + 32, (uint32_t)parts);
     for (k = 0; k < 3; ++k) { putf(b.data + 40 + k*4, m->bounds_min[k]); putf(b.data + 52 + k*4, m->bounds_max[k]); }
@@ -803,7 +852,10 @@ static Blob mesh_binary(Model *m)
         if (!mat->indices.count) continue;
         p = b.data + parts + part++ * 16;
         put32(p, (uint32_t)cursor); put32(p + 4, (uint32_t)mat->indices.count); put32(p + 8, (uint32_t)i); put32(p + 12, mat->flags);
-        for (k = 0; k < mat->indices.count; ++k) put32(b.data + indices + cursor++ * 4, mat->indices.data[k]);
+        for (k = 0; k < mat->indices.count; ++k) {
+            if (mat->indices.data[k] > UINT16_MAX) fail("mesh index exceeds 16-bit GMSH v2 range");
+            put16(b.data + indices + cursor++ * 2, (uint16_t)mat->indices.data[k]);
+        }
     }
     return b;
 }
@@ -1053,7 +1105,10 @@ int main(int argc, char **argv)
     if (positional[2]) {
         const char *f = positional[2];
         if (*f == '.') ++f;
-        if (!*f || strlen(f) > 8) fail("invalid texture format '%s'", positional[2]);
+        const unsigned char *p = (const unsigned char *)f;
+        if (!*p || strlen(f) > 8) fail("invalid texture format '%s'", positional[2]);
+        for (; *p; ++p) if (!isalnum(*p) && *p != '_' && *p != '-')
+            fail("invalid texture format '%s': use only letters, digits, '_' or '-'", positional[2]);
         snprintf(extension, sizeof(extension), ".%s", f);
         m->texture_ext = extension;
     }
@@ -1068,7 +1123,7 @@ int main(int argc, char **argv)
     opts.inherit_mode_handling = UFBX_INHERIT_MODE_HANDLING_PRESERVE;
     opts.generate_missing_normals = true;
     opts.normalize_normals = true;
-    opts.ignore_embedded = true;
+    opts.ignore_embedded = false;
     opts.node_depth_limit = 512;
     opts.temp_allocator.memory_limit = 512u * 1024u * 1024u;
     opts.result_allocator.memory_limit = 512u * 1024u * 1024u;
@@ -1084,6 +1139,7 @@ int main(int argc, char **argv)
     gather_bindings(m);
     build_geometry(m);
     normalize_model(m);
+    bake_static_geometry(m);
     collect_clips(m);
     print_metadata(m);
     if (!inspect) {
@@ -1094,6 +1150,19 @@ int main(int argc, char **argv)
         if (m->num_bones) save_binary(m, "skeleton", skeleton_binary(m));
         if (m->num_bones && has_anim) save_binary(m, "anim", animation_binary(m));
         if (m->num_materials) save_binary(m, "material", material_binary(m));
+        {
+            const char *optional[] = {"skeleton", "anim", "material"};
+            size_t oi;
+            for (oi = 0; oi < 3; ++oi) {
+                int keep = oi == 0 ? m->num_bones != 0 : oi == 1 ? (m->num_bones && has_anim) : m->num_materials != 0;
+                if (!keep) {
+                    char filename[300], path[PATH_CAP];
+                    snprintf(filename, sizeof(filename), "%s.%s", m->basename, optional[oi]);
+                    path_join(path, sizeof(path), m->output, filename);
+                    if (remove(path) && errno != ENOENT) fail("cannot remove stale output '%s': %s", path, strerror(errno));
+                }
+            }
+        }
         write_report(m);
     }
     cleanup(m); free(m);
