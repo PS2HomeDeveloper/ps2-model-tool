@@ -47,6 +47,17 @@ static int valid_header(const GrAsset *asset, const char *magic, uint32_t minimu
     return 1;
 }
 
+static int valid_mesh_header(const GrAsset *asset, uint32_t *version)
+{
+    uint32_t v;
+    if (!asset || !asset->data || asset->size < 64) return fail("Missing or truncated GMSH resource");
+    v = read_u32(asset->data + 4);
+    if (memcmp(asset->data, "GMSH", 4) || (v != 1 && v != 2)) return fail("Invalid GMSH format/version");
+    if (read_u32(asset->data + 8) != asset->size) return fail("Invalid GMSH file size");
+    *version = v;
+    return 1;
+}
+
 static int valid_section(const GrAsset *asset, uint32_t offset, uint32_t count,
                          uint32_t stride, uint32_t minimum)
 {
@@ -84,44 +95,45 @@ int model_load(GrModel *out, const GrAsset *mesh, const GrAsset *skeleton,
                const GrAsset *animation, const GrAsset *material)
 {
     GrModel m;
-    uint32_t vo, io, po, bo, ao, mo, i, j;
+    uint32_t vo, io, po, bo, ao, mo, i, j, mesh_version, index_stride;
     if (!out) return fail("Null model destination");
     memset(&m, 0, sizeof(m));
     gr_model_error[0] = 0;
-    if (!valid_header(mesh, "GMSH", 64, 1) ||
+    if (!valid_mesh_header(mesh, &mesh_version) ||
         !valid_header(skeleton, "GSKL", 32, 1) ||
-        !valid_header(animation, "GANM", 32, 2) ||
+        (animation && !valid_header(animation, "GANM", 32, 2)) ||
         !valid_header(material, "GMAT", 32, 1)) return 0;
     m.vertex_count = read_u32(mesh->data + 12);
     m.index_count = read_u32(mesh->data + 16);
     m.part_count = read_u32(mesh->data + 20);
     m.bone_count = read_u32(skeleton->data + 12);
     m.material_count = read_u32(material->data + 12);
-    m.clip_count = read_u32(animation->data + 16);
+    index_stride = mesh_version == 2 ? 2 : 4;
+    m.clip_count = animation ? read_u32(animation->data + 16) : 0;
     if (!m.vertex_count || m.vertex_count > GR_MAX_VERTICES || !m.index_count ||
         m.index_count > GR_MAX_INDICES || m.index_count % 3 || !m.part_count ||
         m.part_count > GR_MAX_PARTS || !m.bone_count || m.bone_count > GR_MAX_BONES ||
         !m.material_count || m.material_count > GR_MAX_MATERIALS ||
-        !m.clip_count || m.clip_count > GR_MAX_CLIPS || read_u32(animation->data + 12) != m.bone_count ||
-        animation->size > GR_MAX_ANIMATION_BYTES + 64)
+        m.clip_count > GR_MAX_CLIPS || (animation && read_u32(animation->data + 12) != m.bone_count) ||
+        (animation && animation->size > GR_MAX_ANIMATION_BYTES))
         return fail("Resource exceeds prototype budgets or has inconsistent counts");
     vo = read_u32(mesh->data + 24);
     io = read_u32(mesh->data + 28);
     po = read_u32(mesh->data + 32);
     bo = read_u32(skeleton->data + 16);
-    ao = read_u32(animation->data + 20);
+    ao = animation ? read_u32(animation->data + 20) : 0;
     mo = read_u32(material->data + 16);
     if (!valid_section(mesh, vo, m.vertex_count, 48, 64) ||
-        !valid_section(mesh, io, m.index_count, 4, 64) ||
+        !valid_section(mesh, io, m.index_count, index_stride, 64) ||
         !valid_section(mesh, po, m.part_count, 16, 64) ||
         !valid_section(skeleton, bo, m.bone_count, 128, 32) ||
-        !valid_section(animation, ao, m.clip_count, 64, 32) ||
+        (animation && !valid_section(animation, ao, m.clip_count, 64, 32)) ||
         !valid_section(material, mo, m.material_count, 128, 32)) return 0;
     if (!finite_values(mesh->data + 40, 6))
         return fail("Non-finite values in model resources");
-    m.clip_table = animation->data + ao;
-    m.animation_file = animation->data;
-    m.animation_size = animation->size;
+    m.clip_table = animation ? animation->data + ao : NULL;
+    m.animation_file = animation ? animation->data : NULL;
+    m.animation_size = animation ? animation->size : 0;
     for (i = 0; i < m.clip_count; ++i) {
         const unsigned char *e = m.clip_table + i * 64;
         uint32_t frames = read_u32(e + 32);
@@ -134,7 +146,8 @@ int model_load(GrModel *out, const GrAsset *mesh, const GrAsset *skeleton,
             !finite_values(animation->data + read_u32(e + 44), frames * m.bone_count * 12))
             return fail("Invalid animation clip %u data", (unsigned)i);
     }
-    model_set_clip(&m, 0);
+    if (animation) model_set_clip(&m, 0);
+    else m.frame_count = 1;
     m.source_vertices = calloc(m.vertex_count, sizeof(*m.source_vertices));
     m.vertices = calloc(m.vertex_count, sizeof(*m.vertices));
     m.indices = calloc(m.index_count, sizeof(*m.indices));
@@ -186,7 +199,7 @@ int model_load(GrModel *out, const GrAsset *mesh, const GrAsset *skeleton,
         }
     }
     for (i = 0; i < m.index_count; ++i) {
-        m.indices[i] = read_u32(mesh->data + io + i * 4);
+        m.indices[i] = mesh_version == 2 ? read_u16(mesh->data + io + i * 2) : read_u32(mesh->data + io + i * 4);
         if (m.indices[i] >= m.vertex_count) {
             fail("Invalid mesh index");
             goto error;
@@ -241,4 +254,3 @@ error:
     model_destroy(&m);
     return 0;
 }
-

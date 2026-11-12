@@ -57,6 +57,16 @@ void model_update(GrModel *m, float delta_seconds)
     uint32_t a, b, i, j;
     float fraction = 0;
     if (!m || !m->vertices || !m->frame_count) return;
+    if (!m->animation) {
+        for (i = 0; i < m->vertex_count; ++i) {
+            const GrModelVertex *v = &m->source_vertices[i];
+            GrRenderVertex *out = &m->vertices[i];
+            out->x = v->position[0]; out->y = v->position[1]; out->z = v->position[2];
+            out->nx = v->normal[0]; out->ny = v->normal[1]; out->nz = v->normal[2];
+            out->u = v->uv[0]; out->v = v->uv[1];
+        }
+        return;
+    }
     if (isfinite(delta_seconds) && delta_seconds > 0) m->time += delta_seconds;
     a = b = 0;
     if (m->clip_count > 1 && m->duration > 0 && m->time >= m->duration)
