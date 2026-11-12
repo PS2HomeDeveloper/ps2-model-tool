@@ -5,7 +5,7 @@ Files are written only when the source has the data for them.
 
 | File | Written when | Magic / version |
 |------|--------------|-----------------|
-| `NAME.mesh` | the model has meshes | `GMSH` / 1 |
+| `NAME.mesh` | the model has meshes | `GMSH` / 2 |
 | `NAME.skeleton` | the model has deformation bindings | `GSKL` / 1 |
 | `NAME.anim` | the model has bindings and at least one animation stack | `GANM` / 2 |
 | `NAME.material` | the model has materials | `GMAT` / 1 |
@@ -14,8 +14,8 @@ Files are written only when the source has the data for them.
 ## .mesh
 Header 64 bytes: magic, version, file size, vertex count, index count, part count, section offsets, bounds.
 Vertex (48 bytes): `float position[3]`, `float normal[3]`, `float uv[2]`, `uint16 joints[4]`, `uint8 weights[4]` (sum 255), 4 reserved.
-Indices are `uint32`, three per triangle. Part (16 bytes): first index, index count, material, flags.
-The model is normalized to right-handed Y-up, height 2.0, feet on Y=0, centered on X/Z.
+Version 2 indices are `uint16`, three per triangle, halving index storage; the 65,535-vertex limit ensures every index fits. The bundled runtime also accepts legacy version 1 files with `uint32` indices and expands either version into its 32-bit in-memory render list. Part (16 bytes): first index, index count, material, flags.
+The deformed model is normalized to right-handed Y-up, height 2.0, feet on Y=0, centered on X/Z. With source animation stacks, the source-space vertices are transformed by the normalized sampled palette at runtime. With no source animation stacks, the converter bakes the bind pose into normalized mesh positions and the runtime renders it without an animation resource.
 
 ## .skeleton
 Binding (128 bytes): `int32 parent`, `uint32 node id`, `char name[64]`, `float geometry_to_bone[3][4]`. Parents precede children.
@@ -38,7 +38,7 @@ Binding (128 bytes): `int32 parent`, `uint32 node id`, `char name[64]`, `float g
       uint8   reserved[16]
 ```
 Clip data is `float matrix[frame][binding][12]`, row-major 3x4 affine matrices.
-Both endpoints of each clip are sampled. Each clip has its own length, taken from its keyframes.
+Samples are uniformly spaced by `1/fps` from the source start time. The last sample is the last grid point not later than the source end; consequently exported duration can be shorter than the source span by less than one frame. Each clip's source range is derived from its keyframes.
 Bindings match `.skeleton` one to one. A runtime can load the file once and pick a clip by name or index, or read only the table and stream one clip.
 
 ## .material
